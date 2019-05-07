@@ -1,28 +1,46 @@
 print("Function: Comparison Index")
 #-------------------------------------------------------------------------------
-fCompIx <- function(W.DIR,
+fComparIx <- function(W.DIR,
                     IN.DIR,
-                    SHP,
+                    RO.SHP,
+                    FB.SHP,
+                    OUT.DIR,
                     V.CN,
-                             V.GMK,
-                             OUT.DIR,
-                             V.MBI,
-                             V.SLP,
-                             V.K,
-                             V.S,
-                             V.L,
-                             V.LS,
-                             K.CLASS=TRUE)
-  
+                    V.OL,
+                    V.GMK,
+                    V.MBI,
+                    V.SLP,
+                    V.K,
+                    V.US,
+                    V.UL,
+                    V.LS,
+                    V.TH){
 #-------------------------------------------------------------------------------
 print("Import shape file")  
 #-------------------------------------------------------------------------------
-o <- st_read(file.path(W.DIR,IN.DIR,SHP))
+o <- st_read(file.path(W.DIR,IN.DIR,RO.SHP))
 o$AREA <- st_area(o)
 o <- o[which(o$GEOHERK_ST!='1.#INF'),]
-head(o)
+nrow(o)
 o$SL <- o[[paste(V.K)]]*o[[paste(V.LS)]]
-head(o)
+#-------------------------------------------------------------------------------
+print("Calculation of field block areas")
+#-------------------------------------------------------------------------------
+o$AREA <- st_area(o)
+groupColumns = c("FBID")
+dataColumns = c("AREA")
+agg.fb = ddply(o, groupColumns, function(x) colSums(x[dataColumns]))
+colnames(agg.fb) <- c("FBID","AREA.FB")
+o <- merge(o,agg.fb,by="FBID")
+#-------------------------------------------------------------------------------
+print("Calculation of field block and ST areas")
+#-------------------------------------------------------------------------------
+o$FBIDST <- interaction(o$FBID,o$GEOHERK_ST,sep="",drop = TRUE)
+groupColumns = c("FBIDST")
+dataColumns = c("AREA")
+agg.fbst = ddply(o, groupColumns, function(x) colSums(x[dataColumns]))
+colnames(agg.fbst) <- c("FBIDST","AREA.FBST")
+o <- merge(o,agg.fbst,by="FBIDST")
 #-------------------------------------------------------------------------------
 #print("Releation between  regions and terrain classes")
 ##-------------------------------------------------------------------------------
@@ -30,18 +48,16 @@ setwd(file.path(W.DIR,OUT.DIR))
 groupColumns = c("TYPE_GMK","GEOHERK_ST")
 dataColumns = c("AREA")
 agg.bc = ddply(o, groupColumns, function(x) colSums(x[dataColumns]))
-pdf(paste(substr(SHP, start=1, stop=(nchar(SHP)-4)),"_Flaechenanteil_Standorttypen-GMK",c(".pdf"),sep=""),
-    width=8,height=10)
+pdf(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Flaechenanteil_Standorttypen-GMK",c(".pdf"),sep=""),
+    width=10,height=7)
 print(
   barchart(factor(TYPE_GMK) ~ AREA*100/sum(AREA) | GEOHERK_ST, 
            data=agg.bc,
            origin = 0,
-           xlab=paste("Flächenanteil (Gesamtfläche =",round(sum(agg.bc$AREA)/10000,0),"ha)"),
+           xlab=paste("Flächenanteile 'Geologische Entstehung' [%] (Gesamtfläche =",round(sum(agg.bc$AREA)/10000,0),"ha)"),
            ylab="GMK-Klassen")
 )
 dev.off()
-
-
 #-------------------------------------------------------------------------------
 print("Selection of areas, which are not floodplains")
 #-------------------------------------------------------------------------------
@@ -49,7 +65,7 @@ setwd(file.path(W.DIR,OUT.DIR))
 o <- o[which(o$TYPE_GMK>V.GMK),]
 
 setwd(file.path(W.DIR,OUT.DIR))
-pdf(paste(substr(SHP, start=1, stop=(nchar(SHP)-4)),"_Flaechenanteil_Standorttypen_GMK",V.GMK,c(".pdf"),sep=""),
+pdf(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Flaechenanteil_Standorttypen_GMK",V.GMK,c(".pdf"),sep=""),
     width=5,height=5)
 agg <-aggregate(o$AREA, by=list(o$GEOHERK_ST),FUN=sum, na.rm=TRUE)
 agg
@@ -57,41 +73,128 @@ sum.agg <- sum(agg[[2]])
 print("Boxplots")
 barchart(Group.1 ~ x*100/sum.agg,  data = as.data.frame(agg),
          main = "",
-         xlab = paste('Flächenanteil [%] (Gesamtfläche =',round(sum.agg/10000,0),"ha)"),
-         ylab = "Standorttyp",
+         xlab=paste("Flächenanteile [%] (Gesamtfläche =",round(sum(agg.bc$AREA)/10000,0),"ha)"),
+         ylab = "Geologische Entstehung",
          origin = 0)
 
+dev.off()
+#-------------------------------------------------------------------------------
+print("Cluster analysis")
+#-------------------------------------------------------------------------------
+###K factor
+o$MC.K <- Mclust(model.matrix(~-1 + o[[c(paste(V.K,sep=""))]],o),G=V.CN)$classification
+###MBI  
+o$MC.MBI <- Mclust(model.matrix(~-1 + o[[c(paste(V.MBI,sep=""))]],o),G=V.CN)$classification
+###US 
+o$MC.SLP <-  Mclust(model.matrix(~-1 + o[[c(paste(V.SLP,sep=""))]],o),G=V.CN)$classification
+###Upper slope length
+o$MC.UL <-  Mclust(model.matrix(~-1 + o[[c(paste(V.UL,sep=""))]],o),G=V.CN)$classification
+###Upper slope 
+o$MC.US <-  Mclust(model.matrix(~-1 + o[[c(paste(V.US,sep=""))]],o),G=V.CN)$classification
+###LS factor 
+o$MC.LS <-  Mclust(model.matrix(~-1 + o[[c(paste(V.LS,sep=""))]],o),G=V.CN)$classification
+###Soil loss 
+o$MC.SL <-  Mclust(model.matrix(~-1 + o$SL,o),G=V.CN)$classification
+setwd(file.path(W.DIR,OUT.DIR))
+st_write(o,
+         paste(W.DIR,OUT.DIR,substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster",c(".shp"),sep=""),
+         delete_layer = TRUE)
+
+setwd(file.path(W.DIR,OUT.DIR))
+pdf(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster",c(".pdf"),sep=""),
+    width=12,height=5)
+par(mfrow=c(2,6))
+boxplot(o$SL ~ MC.SL, 
+        data=o,
+        horizontal=TRUE,
+        ylim=c(0,1),
+        ylab="Cluster",
+        xlab=expression(paste(italic(Enat))),
+        las=1)
+boxplot(o[[c(paste(V.K,sep=""))]] ~ MC.K, 
+        data=o,
+        horizontal=TRUE,
+        ylim=c(0,1),
+        ylab="Cluster",
+        xlab=expression(paste(italic(K))),
+        las=1)
+boxplot(o[[c(paste(V.LS,sep=""))]] ~ MC.LS, 
+        data=o,
+        horizontal=TRUE,
+        ylim=c(0,2),
+        ylab="Cluster",
+        xlab=expression(paste(italic(LS))),
+        las=1)
+boxplot(o[[c(paste(V.UL,sep=""))]] ~ MC.UL, 
+        data=o,
+        horizontal=TRUE,
+        ylim=c(0,2000),
+        ylab="Cluster",
+        xlab=expression(paste(italic(UL))),
+        las=1)
+boxplot(o[[c(paste(V.US,sep=""))]] ~ MC.US, 
+        data=o,
+        horizontal=TRUE,
+        ylim=c(0,0.2),
+        ylab="Cluster",
+        xlab=expression(paste(italic(US))),
+        las=1)
+
+boxplot(o[[c(paste(V.MBI,sep=""))]] ~ MC.MBI, 
+        data=o,
+        horizontal=TRUE,
+        ylim=c(-1,2),
+        ylab="Cluster",
+        xlab=expression(paste(italic(MBI))),
+        las=1)
+
+plot(density(o$SL),
+     xlim=c(0,1),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(Enat))))
+plot(density(o[[c(paste(V.K,sep=""))]]),
+     xlim=c(0,1),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(K))))
+plot(density(o[[c(paste(V.LS,sep=""))]]),
+     xlim=c(0,2),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(LS))))
+plot(density(o[[c(paste(V.UL,sep=""))]]),
+     xlim=c(0,2000),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(UL))))
+plot(density(o[[c(paste(V.US,sep=""))]]),
+     xlim=c(0,0.2),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(US))))
+
+plot(density(o[[c(paste(V.MBI,sep=""))]]),
+     xlim=c(-1,2),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(MBI))))
 dev.off()
 
 
 #-------------------------------------------------------------------------------
-print("Analysis of soil regions")
+print("Calculation of Comparison Indizes and Dominance Triples for each single field block")
 #-------------------------------------------------------------------------------
-###K factor classification according to AG BOden (2005:p.366)
-o$MC.K <- Mclust(model.matrix(~-1 + o[[c(paste(V.K,sep=""))]],o),G=V.CN)$classification
-###MBI  classification
-o$MC.MBI <- Mclust(model.matrix(~-1 + o[[c(paste(V.MBI,sep=""))]],o),G=V.CN)$classification
-###US factor classification
-o$MC.SLP <-  Mclust(model.matrix(~-1 + o[[c(paste(V.SLP,sep=""))]],o),G=V.CN)$classification
-###Upper slope length classification
-o$MC.UL <-  Mclust(model.matrix(~-1 + o[[c(paste(V.UL,sep=""))]],o),G=V.CN)$classification
-###Upper slope classification
-o$MC.US <-  Mclust(model.matrix(~-1 + o[[c(paste(V.US,sep=""))]],o),G=V.CN)$classification
-###LS factor classification
-o$MC.LS <-  Mclust(model.matrix(~-1 + o[[c(paste(V.LS,sep=""))]],o),G=V.CN)$classification
-###Soil loss classification
-o$MC.SL <-  Mclust(model.matrix(~-1 + o$SL,o),G=V.CN)$classification
-
-
-#split according to soil regions
-l.o <- split(o,o$GEOHERK_ST)
-for(j in 2:length(l.o)){
-#-------------------------------------------------------------------------------
-print(paste("Calculation of Comparison Indizes and Dominance Triples:",names(l.o[j])))
-#-------------------------------------------------------------------------------
+head(o)
 #split data set according to FBID
-o.fb <- split(l.o[[j]],l.o[[j]]$IDFB)
-df.columnnames <- c("IDFB","AreaFB","CI.MBI1","DT.MBI1","CI.MBI2","DT.MBI2","CI.K","DT.K","CI.US","DT.US","CI.UL","DT.UL","CI.LS","DT.LS","CI.SL","DT.SL")
+o.fb <- split(o,o$FBIDST,drop = TRUE)
+df.columnnames <- c("IDFB","AreaFB","AreaFBST","CI.MBI1","DT.MBI1","CI.MBI2","DT.MBI2","CI.K","DT.K","CI.US","DT.US","CI.UL","DT.UL","CI.LS","DT.LS","CI.SL","DT.SL","ST","FBID")
 #calculating and plotting cluster-specific area proportions and CIs
 df.CI=matrix(nrow=length(o.fb),ncol=length(df.columnnames))
 df.CI=data.frame(df.CI)
@@ -101,208 +204,212 @@ for(i in 1:length(o.fb)){
   #Field bock ID
   df.CI[i,1] <- unique(o.fb[[i]]$IDFB)
   #Field block area
-  df.CI[i,2] <- sum(o.fb[[i]]$AREA)
-  ###Comparison indices
+  df.CI[i,2] <- unique(o.fb[[i]]$AREA.FB)
+  #Field block and ST area
+  df.CI[i,3] <- unique(o.fb[[i]]$AREA.FBST)
+    ###Comparison indices
   ##MBI1
   agg <-aggregate(o.fb[[i]]$AREA, by=list(o.fb[[i]]$MC.MBI),FUN=sum, na.rm=TRUE)
   agg.tbl <-  data.frame(MC.MBI=agg[[1]],
                          AREA.PP=agg[[2]]*100/sum(agg[[2]]))
   agg.tbl$CI.MBI1 <- (agg.tbl$MC.MBI*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,3] <- round(sum(agg.tbl$CI.MBI1),0)
+  df.CI[i,4] <- round(sum(agg.tbl$CI.MBI1),0)
   #Dominance triple
-  df.CI[i,4] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,5] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
   ##MBI2
   agg.tbl$MC.MBI = (V.CN+1)-agg.tbl$MC.MBI
   #agg.tbl$MC.MBI[agg.tbl$MC.MBI==(CN+1)] <- 0
   agg.tbl$CI.MBI2 <- (agg.tbl$MC.MBI*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,5] <- round(sum(agg.tbl$CI.MBI2),0)
-  df.CI[i,6] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,6] <- round(sum(agg.tbl$CI.MBI2),0)
+  df.CI[i,7] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
   ##K
   agg <-aggregate(o.fb[[i]]$AREA, by=list(o.fb[[i]]$MC.K),FUN=sum, na.rm=TRUE)
   agg.tbl <-  data.frame(MC.K=agg[[1]],
                          AREA.PP=agg[[2]]*100/sum(agg[[2]]))
   agg.tbl$CI.K <- (agg.tbl$MC.K*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,7] <- round(sum(agg.tbl$CI.K),0)
-  df.CI[i,8] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,8] <- round(sum(agg.tbl$CI.K),0)
+  df.CI[i,9] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
   ##US
   agg <-aggregate(o.fb[[i]]$AREA, by=list(o.fb[[i]]$MC.US),FUN=sum, na.rm=TRUE)
   agg.tbl <-  data.frame(MC.US=agg[[1]],
                          AREA.PP=agg[[2]]*100/sum(agg[[2]]))
   agg.tbl$CI.US <- (agg.tbl$MC.US*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,9] <- round(sum(agg.tbl$CI.US),0)
+  df.CI[i,10] <- round(sum(agg.tbl$CI.US),0)
   #Dominance triple
-  df.CI[i,10] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,11] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
   ##UL
   agg <-aggregate(o.fb[[i]]$AREA, by=list(o.fb[[i]]$MC.UL),FUN=sum, na.rm=TRUE)
   agg.tbl <-  data.frame(MC.UL=agg[[1]],
                          AREA.PP=agg[[2]]*100/sum(agg[[2]]))
   agg.tbl$CI.UL <- (agg.tbl$MC.UL*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,11] <- round(sum(agg.tbl$CI.UL),0)
+  df.CI[i,12] <- round(sum(agg.tbl$CI.UL),0)
   #Dominance triple
-  df.CI[i,12] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,13] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
   ##LS
   agg <-aggregate(o.fb[[i]]$AREA, by=list(o.fb[[i]]$MC.LS),FUN=sum, na.rm=TRUE)
   agg.tbl <-  data.frame(MC.LS=agg[[1]],
                          AREA.PP=agg[[2]]*100/sum(agg[[2]]))
   agg.tbl$CI.LS <- (agg.tbl$MC.LS*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,13] <- round(sum(agg.tbl$CI.LS),0)
+  df.CI[i,14] <- round(sum(agg.tbl$CI.LS),0)
   #Dominance triple
-  df.CI[i,14] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,15] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
   ##SL
   agg <-aggregate(o.fb[[i]]$AREA, by=list(o.fb[[i]]$MC.SL),FUN=sum, na.rm=TRUE)
   agg.tbl <-  data.frame(MC.SL=agg[[1]],
                          AREA.PP=agg[[2]]*100/sum(agg[[2]]))
   agg.tbl$CI.SL <- (agg.tbl$MC.SL*agg.tbl$AREA.PP)/(V.CN+1)
-  df.CI[i,15] <- round(sum(agg.tbl$CI.SL),0)
+  df.CI[i,16] <- round(sum(agg.tbl$CI.SL),0)
   #Dominance triple
-  df.CI[i,16] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  df.CI[i,17] <- as.character(paste(agg.tbl[order(agg.tbl$AREA.PP,decreasing = TRUE),][1:3,1],sep="",collapse = ""))
+  setTxtProgressBar(pb, i)
+  #Geoherkunft
+  df.CI[i,18] <- as.character(unique(o.fb[[i]]$GEOHERK_ST))
+  #FBID
+  df.CI[i,19] <- as.character(unique(o.fb[[i]]$FBID))
   setTxtProgressBar(pb, i)
 }
+#CI (Enat) cluster analysis
+df.CI$MC.CI.SL <- Mclust(model.matrix(~-1 + CI.SL,df.CI))$classification
+#Merging of cluster analysis result with field block file
+fb <- st_read(file.path(W.DIR,IN.DIR,FB.SHP))
+head(df.CI)
+fb <- merge(fb,df.CI,by="FBID")
+#Boxplot of 
+setwd(file.path(W.DIR,OUT.DIR))
+pdf(paste(substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster_CI-SL",c(".pdf"),sep=""),
+    width=4,height=8)
+par(mfrow=c(2,1))
+boxplot(CI.SL ~ MC.CI.SL, 
+        data=df.CI,
+        horizontal=TRUE,
+        ylim=c(0,100),
+        ylab="Cluster",
+        xlab=expression(paste(italic(CI^Enat))),
+        las=1)
+plot(density(df.CI$CI.SL),
+     xlim=c(0,100),
+     main="",
+     las=1,
+     ylab="Dichtefunktion",
+     xlab=expression(paste(italic(CI^Enat))))
+dev.off()
+
+setwd(file.path(W.DIR,OUT.DIR))
+st_write(fb,
+         paste(W.DIR,OUT.DIR,substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Feldblockbewertung",c(".shp"),sep=""),
+         delete_layer = TRUE)
+
+head(df.CI)
 #-------------------------------------------------------------------------------
 print("Analysis of CI values")
 #-------------------------------------------------------------------------------
-  if(df.CI$CI.SL>=80){
-   df.CI <- df.CI[which(df.CI$CI.SL>=80),]
-    #rpart
-    fit <- rpart(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US,
-                  data = df.CI, parms = list(split = 'gini'))
-    setwd(file.path(W.DIR,OUT.DIR))
-    pdf(paste(substr(SHP, start=1, stop=(nchar(SHP)-4)),"_",as.character(unique(l.o[[j]]$GEOHERK_ST)),"_CLCI",as.character(unique(l.CL.CI[[k]]$CL.CI.SL)),"_rpart",c(".pdf"),sep=""),
-        width=8,height=8)
-    plot(fit)
-    text(fit)
-    dev.off()
-    #interaction
-    l.CL.CI[[k]]$CL.CI <- interaction(as.factor(l.CL.CI[[k]]$CL.CI.US), 
-                               as.factor(l.CL.CI[[k]]$CL.CI.UL),
-                               as.factor(l.CL.CI[[k]]$CL.CI.MBI1),
-                               as.factor(l.CL.CI[[k]]$CL.CI.MBI2),
-                               sep="")
-    ##plot proportions and number of interacted classes
-    Count <- as.data.frame(as.matrix(table(l.CL.CI[[k]]$CL.CI)))
-    Count$ClusterIA <- rownames(Count)
-    Count[Count==0]<-NA
-    Count <- na.omit(Count)
-    l.CL.CI[[k]]$Count <- 1
-    Area  <-as.data.frame(aggregate(l.CL.CI[[k]]$AreaFB, by=list(l.CL.CI[[k]]$CL.CI),FUN=sum, na.rm=TRUE))
-    Count <- as.data.frame(aggregate(l.CL.CI[[k]]$Count, by=list(l.CL.CI[[k]]$CL.CI),FUN=sum, na.rm=TRUE))
-    df.CI.agg <- data.frame(ClusterIA=Area$Group.1,Area=Area$x,Count=Count$x)
-    groupColumns = c("ClusterIA")
-    dataColumns = c("Area")
-    agg.bc = ddply(df.CI.agg, groupColumns, function(x) colSums(x[dataColumns]))
+nrow(df.CI)
+#selection of parcels which belong to specific CI.SL cluster  
+df.CI.E <- df.CI[which(df.CI$MC.CI.SL>=V.TH),]
+nrow(df.CI.E)
+
+#selection of parcels with a certain overlap  
+df.CI.E <- df.CI.E[which((df.CI.E$AreaFBST/df.CI.E$AreaFB)>=V.OL),]
+
+setwd(file.path(W.DIR,OUT.DIR))
+pdf(paste(substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_CI_Flaechenanteil_Standorttypen_Erosion_TH",V.TH,c(".pdf"),sep=""),
+    width=5,height=5)
+agg <-aggregate(df.CI.E$AreaFBST, by=list(df.CI.E$ST),FUN=sum, na.rm=TRUE)
+agg
+sum.agg <- sum(agg[[2]])
+print("Boxplots")
+barchart(Group.1 ~ x*100/sum.agg,  data = as.data.frame(agg),
+         main = "",
+         xlab = paste('Flächenanteil [%] (Gesamtfläche =',round(sum.agg/10000,0),"ha)"),
+         ylab = "Geologische Entstehung",
+         origin = 0)
+
+dev.off()
+
+
+##Random Forest
+set.seed(123)
+ctrl <- trainControl(method="repeatedcv",number=5)
+rf.Fit <-   train(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US + ST,
+                  data = df.CI.E,
+                  ntree=1000,
+                  method = "rf",
+                  trControl = ctrl,
+                  preProc = c("center", "scale"),
+                  importance = TRUE,
+                  verbose = TRUE,
+                  varImp.train=FALSE)
+  
+  
+setwd(file.path(W.DIR,OUT.DIR))
+sink(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_CI_Erosion_rf","_TH",V.TH,c(".txt"),sep=""))
+print(rf.Fit)
+print(varImp(rf.Fit,scale=TRUE))
+sink()
+
+#Split according to soil regions
+df.CI.ST <- split(df.CI.E,df.CI.E$ST,drop = TRUE)
+names(df.CI.ST)
+for(k in 1:length(df.CI.ST)){
+   if(nrow(df.CI.ST[[k]])>10){
+   #Random Forest
+   set.seed(123)
+   ctrl <- trainControl(method="repeatedcv",number=5)
+   rf.Fit <-   train(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US,
+                     data = df.CI.ST[[k]],
+                     ntree=1000,
+                     method = "rf",
+                     trControl = ctrl,
+                     preProc = c("center", "scale"),
+                     importance = TRUE,
+                     verbose = TRUE,
+                     varImp.train=FALSE)
     
-    pdf(paste(substr(SHP, start=1, stop=(nchar(SHP)-4)),"_",as.character(unique(l.o[[j]]$GEOHERK_ST)),"_CLCI",as.character(unique(l.CL.CI[[k]]$CL.CI.SL)),"_barchart-area",c(".pdf"),sep=""),
+   setwd(file.path(W.DIR,OUT.DIR))
+   sink(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_VI","_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".txt"),sep=""))
+   print(rf.Fit)
+   print(varImp(rf.Fit,scale=TRUE))
+   sink()
+   #Interaction
+   df.CI.ST[[k]]$I.CI <- interaction(as.factor(round(df.CI.ST[[k]]$CI.US/10,0)), 
+                                as.factor(round(df.CI.ST[[k]]$CI.UL/10,0)),
+                                as.factor(round(df.CI.ST[[k]]$CI.MBI1/10,0)),
+                                as.factor(round(df.CI.ST[[k]]$CI.MBI2/10,0)),
+                                sep="")
+   head(df.CI.ST[[k]])
+   #Plot proportions and number of interacted classes
+   Count <- as.data.frame(as.matrix(table(df.CI.ST[[k]]$I.CI)))
+   Count$ClusterIA <- rownames(Count)
+   Count[Count==0]<-NA
+   Count <- na.omit(Count)
+   df.CI.ST[[k]]$Count <- 1
+   Area  <-as.data.frame(aggregate(df.CI.ST[[k]]$AreaFB, by=list(df.CI.ST[[k]]$I.CI),FUN=sum, na.rm=TRUE))
+   Count <- as.data.frame(aggregate(df.CI.ST[[k]]$Count, by=list(df.CI.ST[[k]]$I.CI),FUN=sum, na.rm=TRUE))
+   df.CI.agg <- data.frame(ClusterIA=Area$Group.1,Area=Area$x,Count=Count$x)
+   groupColumns = c("ClusterIA")
+   dataColumns = c("Area")
+   agg.bc = ddply(df.CI.agg, groupColumns, function(x) colSums(x[dataColumns]))
+   #Select best combinations 
+   agg.bc <- head(agg.bc[order(agg.bc$Area,decreasing = TRUE), ], 20)
+   #plot
+   pdf(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_Feldblockbewertung","_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".pdf"),sep=""),
         width=6,height=6)
     print(
-    barchart(factor(ClusterIA) ~ Area*100/sum(Area), 
-           data=agg.bc,
-           origin = 0,
-           xlab=paste('Fl?chenanteil (Gesamtfläche =',round(sum(agg.bc$Area)/10000,0),"ha)"),
-           ylab=paste("Reliefklassen der VI-Klasse",as.character(unique(l.CL.CI[[k]]$CL.CI.SL))))
-   )
-   dev.off()
-   #plot
-   groupColumns = c("ClusterIA")
-   dataColumns = c("Count")
-   agg.bc = ddply(df.CI.agg, groupColumns, function(x) colSums(x[dataColumns]))
-   pdf(paste(substr(SHP, start=1, stop=(nchar(SHP)-4)),"_",as.character(unique(l.o[[j]]$GEOHERK_ST)),"_CLCI",as.character(unique(l.CL.CI[[k]]$CL.CI.SL)),"_barchart-number",c(".pdf"),sep=""),
-       width=8,height=8)
-   print(
-   barchart(factor(ClusterIA) ~ Count*100/sum(Count), 
-           data=agg.bc,
-           origin = 0,
-           xlab=paste("Anzahl (Gesamt = ",round(sum(agg.bc$Count),0),")",sep=""),
-           ylab="Relief- und Bodenabtragsklassen")
-   )
-  dev.off()
-  ##export
-  write.csv2(df.CI,
-             paste(W.DIR,OUT.DIR,substr(SHP, start=1, stop=(nchar(SHP)-4)),"_",as.character(unique(l.o[[j]]$GEOHERK_ST)),"_Feldblockbewertung",c(".csv"),sep=""))
-  o <- merge(o,df.CI,by="IDFB")
-  o$AREA <- st_area(o)
-  setwd(file.path(W.DIR,OUT.DIR))
-  st_write(o,
-           paste(W.DIR,OUT.DIR,substr(SHP, start=1, stop=(nchar(SHP)-4)),"_",as.character(unique(l.o[[j]]$GEOHERK_ST)),"_Feldblockbewertung",c(".shp"),sep=""),
-           delete_layer = TRUE)
-
-  }
-  }
-
-#####test
-
-
-
-
-
-
-
-
-
-
-
-##field block-specific boxplots
-l.CL.CI <- split(o,o$CL.CI)
-for(i in (1:length(l.CL.CI))){
-  if(nrow(l.CL.CI[[i]])>0){
-    
-    
-    l.CL.CI.FB <- split(l.CL.CI$`424`,l.CL.CI$`424`$IDFB)
-    #l.CL.CI.FB <- split(l.CL.CI[[i]],l.CL.CI[[i]]$IDFB)
-    setwd(file.path(W.DIR,OUT.DIR))
-    pdf(paste(W.DIR,OUT.DIR,"FeldblockBewertung_CI",as.character(unique(l.CL.CI.FB[[i]]$CL.CI)),"__",substr(SHP, start=1, stop=(nchar(SHP)-4)),c(".pdf"),sep=""),
-        width=7,height=3)
-    for(j in (1:length(l.CL.CI.FB))){
-      par(mfrow=c(1,3))
-      #area bar plot for all crop types
-      agg <-aggregate(l.CL.CI.FB[[j]]$AREA, by=list(l.CL.CI.FB[[j]]$MC.MBI),FUN=sum, na.rm=TRUE)
-      sum.agg <- sum(agg[[2]])
-      t.sum <- tapply(agg[[2]],agg[[1]],sum)
-      xx <- barplot(t.sum*100/sum.agg,
-                    ylab="Fl?chenanteil [%]",
-                    sub=paste('Gesamtfl?che =',round(sum.agg/10000,1),' ha'),
-                    xlab=expression(paste(italic(MBI),"-Cluster")),
-                    las=1,
-                    ylim=c(0,100),
-                    main=paste(unique(l.CL.CI.FB[[j]]$FBID)))
-      text(x = xx, y = t.sum*100/sum.agg, label = round(t.sum*100/sum.agg,1), pos = 3, cex = 0.8, col = "red")
-      legend("topleft", 
-             legend=c(as.expression(bquote({italic(CI)^{MBI}^{1}} == .(round(unique(l.CL.CI.FB[[j]]$CI.MBI1),0)))),
-                      as.expression(bquote({italic(CI)^{MBI}^{2}} == .(round(unique(l.CL.CI.FB[[j]]$CI.MBI2),0))))),
-             bty="n",cex=1)
-      
-      
-      agg <-aggregate(l.CL.CI.FB[[j]]$AREA, by=list(l.CL.CI.FB[[j]]$MC.SL),FUN=sum, na.rm=TRUE)
-      sum.agg <- sum(agg[[2]])
-      t.sum <- tapply(agg[[2]],agg[[1]],sum)
-      xx <- barplot(t.sum*100/sum.agg,
-                    ylab="Fl?chenanteil [%]",
-                    xlab=expression(paste(italic(A),"-Cluster")),
-                    las=1,
-                    ylim=c(0,100),
-                    main="")
-      text(x = xx, y = t.sum*100/sum.agg, label = round(t.sum*100/sum.agg,1), pos = 3, cex = 0.8, col = "red")
-      legend("topleft", 
-             legend=c(as.expression(bquote({italic(CI)^{A}} == .(round(unique(l.CL.CI.FB[[j]]$CI.A)))))),
-             bty="n",cex=1)
-      
-      
-      agg <-aggregate(l.CL.CI.FB[[j]]$AREA, by=list(l.CL.CI.FB[[j]]$MC.VDC),FUN=sum, na.rm=TRUE)
-      sum.agg <- sum(agg[[2]])
-      t.sum <- tapply(agg[[2]],agg[[1]],sum)
-      xx <- barplot(t.sum*100/sum.agg,
-                    ylab="Fl?chenanteil [%]",
-                    xlab=expression(paste(italic(VDC),"-Cluster")),
-                    las=1,
-                    ylim=c(0,100),
-                    main="")
-      text(x = xx, y = t.sum*100/sum.agg, label = round(t.sum*100/sum.agg,1), pos = 3, cex = 0.8, col = "red")
-      legend("topleft", 
-             legend=c(as.expression(bquote({italic(CI)^{VDC}} == .(round(unique(l.CL.CI.FB[[j]]$CI.VDC)))))),
-             bty="n",cex=1)
-    }
+      barchart(factor(ClusterIA) ~ Area*100/sum(Area), 
+               data=agg.bc,
+               origin = 0,
+               xlab=paste('Flächenanteil (Gesamtfläche =',round(sum(agg.bc$Area)/10000,0),"ha)"),
+               ylab="Reliefklassen"))
     dev.off()
+    
+    ##export
+    fb <- st_read(file.path(W.DIR,IN.DIR,FB.SHP))
+    fb <- merge(fb,df.CI.ST[[k]],by="FBID")
+    setwd(file.path(W.DIR,OUT.DIR))
+    st_write(fb,
+             paste(W.DIR,OUT.DIR,substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_Feldblockbewertung_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".shp"),sep=""),
+             delete_layer = TRUE)
+    
+    }
   }
-} 
-
-
-
+  }
