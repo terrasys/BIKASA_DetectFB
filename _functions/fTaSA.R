@@ -59,16 +59,6 @@ rsaga.grid.calculus(c(paste(W.DIR,OUT.DIR,DEM,"_SLP.sgrd",sep="")),
                     paste(W.DIR,OUT.DIR,DEM,"_SLP_T10.sgrd",sep=""), ~(a/(a+10)),
                     env=myenv)
 #------------------------------------------------------------------------------- 
-print("TCI")
-#-------------------------------------------------------------------------------
-rsaga.geoprocessor(
-  lib="ta_hydrology",
-  module=24, 
-  param=list(DISTANCE=paste(W.DIR,OUT.DIR,DEM,"_VDC.sgrd",sep=""),
-             TWI=paste(W.DIR,OUT.DIR,DEM,"_TWI.sgrd",sep=""),
-             TCILOW=paste(W.DIR,OUT.DIR,DEM,"_TCI.sgrd",sep="")),
-  env=myenv)
-#------------------------------------------------------------------------------- 
 print("Field-based LS factor")
 #-------------------------------------------------------------------------------
 rsaga.geoprocessor(
