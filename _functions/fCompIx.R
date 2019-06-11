@@ -63,6 +63,7 @@ print("Selection of areas, which are not floodplains")
 #-------------------------------------------------------------------------------
 setwd(file.path(W.DIR,OUT.DIR))
 o <- o[which(o$TYPE_GMK>V.GMK),]
+nrow(o)
 
 setwd(file.path(W.DIR,OUT.DIR))
 pdf(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Flaechenanteil_Standorttypen_GMK",V.GMK,c(".pdf"),sep=""),
@@ -73,7 +74,7 @@ sum.agg <- sum(agg[[2]])
 print("Boxplots")
 barchart(Group.1 ~ x*100/sum.agg,  data = as.data.frame(agg),
          main = "",
-         xlab=paste("Flächenanteile [%] (Gesamtfläche =",round(sum(agg.bc$AREA)/10000,0),"ha)"),
+         xlab=paste("Flächenanteile [%] (Gesamtfläche =",round(sum.agg/10000,0),"ha)"),
          ylab = "Geologische Entstehung",
          origin = 0)
 
@@ -100,9 +101,12 @@ st_write(o,
          paste(W.DIR,OUT.DIR,substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster",c(".shp"),sep=""),
          delete_layer = TRUE)
 
+
+#Plot cluster results
 setwd(file.path(W.DIR,OUT.DIR))
-pdf(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster",c(".pdf"),sep=""),
-    width=12,height=5)
+#pdf(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster",c(".pdf"),sep=""),
+#    width=12,height=5)
+png(paste(substr(RO.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster",c(".png"),sep=""),width=2200,height=1200,res=200)
 par(mfrow=c(2,6))
 boxplot(o$SL ~ MC.SL, 
         data=o,
@@ -269,48 +273,49 @@ for(i in 1:length(o.fb)){
   setTxtProgressBar(pb, i)
 }
 #CI (Enat) cluster analysis
-df.CI$MC.CI.SL <- Mclust(model.matrix(~-1 + CI.SL,df.CI))$classification
+#df.CI$MC.CI.SL <- Mclust(model.matrix(~-1 + CI.SL,df.CI))$classification
 #Merging of cluster analysis result with field block file
 fb <- st_read(file.path(W.DIR,IN.DIR,FB.SHP))
 head(df.CI)
 fb <- merge(fb,df.CI,by="FBID")
-#Boxplot of 
-setwd(file.path(W.DIR,OUT.DIR))
-pdf(paste(substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster_CI-SL",c(".pdf"),sep=""),
-    width=4,height=8)
-par(mfrow=c(2,1))
-boxplot(CI.SL ~ MC.CI.SL, 
-        data=df.CI,
-        horizontal=TRUE,
-        ylim=c(0,100),
-        ylab="Cluster",
-        xlab=expression(paste(italic(CI^Enat))),
-        las=1)
-plot(density(df.CI$CI.SL),
-     xlim=c(0,100),
-     main="",
-     las=1,
-     ylab="Dichtefunktion",
-     xlab=expression(paste(italic(CI^Enat))))
-dev.off()
+##Boxplot of 
+#setwd(file.path(W.DIR,OUT.DIR))
+#pdf(paste(substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Cluster_CI-SL",c(".pdf"),sep=""),
+#    width=4,height=8)
+#par(mfrow=c(2,1))
+#boxplot(CI.SL ~ MC.CI.SL, 
+#        data=df.CI,
+#        horizontal=TRUE,
+#        ylim=c(0,100),
+#        ylab="Cluster",
+#        xlab=expression(paste(italic(CI^Enat))),
+#        las=1)
+#plot(density(df.CI$CI.SL),
+#     xlim=c(0,100),
+#     main="",
+#     las=1,
+#     ylab="Dichtefunktion",
+#     xlab=expression(paste(italic(CI^Enat))))
+#dev.off()
 
 setwd(file.path(W.DIR,OUT.DIR))
 st_write(fb,
          paste(W.DIR,OUT.DIR,substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_Feldblockbewertung",c(".shp"),sep=""),
          delete_layer = TRUE)
 
-head(df.CI)
+#head(df.CI)
 #-------------------------------------------------------------------------------
 print("Analysis of CI values")
 #-------------------------------------------------------------------------------
-nrow(df.CI)
+#nrow(df.CI)
 #selection of parcels which belong to specific CI.SL cluster  
-df.CI.E <- df.CI[which(df.CI$MC.CI.SL>=V.TH),]
+head(fb)
+df.CI.E <- fb[which(fb$CI.SL>=V.TH),]
 nrow(df.CI.E)
 
 #selection of parcels with a certain overlap  
-df.CI.E <- df.CI.E[which((df.CI.E$AreaFBST/df.CI.E$AreaFB)>=V.OL),]
-
+df.CI.E <- df.CI.E[which((df.CI.E$AreaFBST*100/df.CI.E$AreaFB)>=V.OL),]
+nrow(df.CI.E)
 setwd(file.path(W.DIR,OUT.DIR))
 pdf(paste(substr(FB.SHP, start=1, stop=(nchar(RO.SHP)-4)),"_CI_Flaechenanteil_Standorttypen_Erosion_TH",V.TH,c(".pdf"),sep=""),
     width=5,height=5)
@@ -327,89 +332,91 @@ barchart(Group.1 ~ x*100/sum.agg,  data = as.data.frame(agg),
 dev.off()
 
 
-##Random Forest
-set.seed(123)
-ctrl <- trainControl(method="repeatedcv",number=5)
-rf.Fit <-   train(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US + ST,
-                  data = df.CI.E,
-                  ntree=1000,
-                  method = "rf",
-                  trControl = ctrl,
-                  preProc = c("center", "scale"),
-                  importance = TRUE,
-                  verbose = TRUE,
-                  varImp.train=FALSE)
+  #Random Foest
+  set.seed(123)
+  ctrl <- trainControl(method="repeatedcv",number=5)
+  rf.Fit <-   train(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US + ST,
+                    data = df.CI.E,
+                    ntree=1000,
+                    method = "rf",
+                    trControl = ctrl,
+                    preProc = c("center", "scale"),
+                    importance = TRUE,
+                    verbose = TRUE,
+                    varImp.train=FALSE)
   
   
-setwd(file.path(W.DIR,OUT.DIR))
-sink(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_CI_Erosion_rf","_TH",V.TH,c(".txt"),sep=""))
-print(rf.Fit)
-print(varImp(rf.Fit,scale=TRUE))
-sink()
+  setwd(file.path(W.DIR,OUT.DIR))
+  sink(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_CI_Erosion_rf","_TH",V.TH,c(".txt"),sep=""))
+  print(rf.Fit)
+  print(varImp(rf.Fit,scale=TRUE))
+  sink()
 
-#Split according to soil regions
-df.CI.ST <- split(df.CI.E,df.CI.E$ST,drop = TRUE)
-names(df.CI.ST)
-for(k in 1:length(df.CI.ST)){
-   if(nrow(df.CI.ST[[k]])>10){
-   #Random Forest
-   set.seed(123)
-   ctrl <- trainControl(method="repeatedcv",number=5)
-   rf.Fit <-   train(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US,
-                     data = df.CI.ST[[k]],
-                     ntree=1000,
-                     method = "rf",
-                     trControl = ctrl,
-                     preProc = c("center", "scale"),
-                     importance = TRUE,
-                     verbose = TRUE,
-                     varImp.train=FALSE)
+  
+  
+  #split according to soil regions
+  df.CI.ST <- split(df.CI.E,df.CI.E$ST,drop = TRUE)
+  names(df.CI.ST)
+  for(k in 1:length(df.CI.ST)){
+    if(nrow(df.CI.ST[[k]])>10){
+    #Random Forest
+    set.seed(123)
+    ctrl <- trainControl(method="repeatedcv",number=5)
+    rf.Fit <-   train(CI.SL ~ CI.K + CI.MBI1 + CI.MBI2 + CI.UL + CI.US,
+                      data = df.CI.ST[[k]],
+                      ntree=1000,
+                      method = "rf",
+                      trControl = ctrl,
+                      preProc = c("center", "scale"),
+                      importance = TRUE,
+                      verbose = TRUE,
+                      varImp.train=FALSE)
     
-   setwd(file.path(W.DIR,OUT.DIR))
-   sink(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_VI","_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".txt"),sep=""))
-   print(rf.Fit)
-   print(varImp(rf.Fit,scale=TRUE))
-   sink()
-   #Interaction
-   df.CI.ST[[k]]$I.CI <- interaction(as.factor(round(df.CI.ST[[k]]$CI.US/10,0)), 
-                                as.factor(round(df.CI.ST[[k]]$CI.UL/10,0)),
-                                as.factor(round(df.CI.ST[[k]]$CI.MBI1/10,0)),
-                                as.factor(round(df.CI.ST[[k]]$CI.MBI2/10,0)),
-                                sep="")
-   head(df.CI.ST[[k]])
-   #Plot proportions and number of interacted classes
-   Count <- as.data.frame(as.matrix(table(df.CI.ST[[k]]$I.CI)))
-   Count$ClusterIA <- rownames(Count)
-   Count[Count==0]<-NA
-   Count <- na.omit(Count)
-   df.CI.ST[[k]]$Count <- 1
-   Area  <-as.data.frame(aggregate(df.CI.ST[[k]]$AreaFB, by=list(df.CI.ST[[k]]$I.CI),FUN=sum, na.rm=TRUE))
-   Count <- as.data.frame(aggregate(df.CI.ST[[k]]$Count, by=list(df.CI.ST[[k]]$I.CI),FUN=sum, na.rm=TRUE))
-   df.CI.agg <- data.frame(ClusterIA=Area$Group.1,Area=Area$x,Count=Count$x)
-   groupColumns = c("ClusterIA")
-   dataColumns = c("Area")
-   agg.bc = ddply(df.CI.agg, groupColumns, function(x) colSums(x[dataColumns]))
-   #Select best combinations 
-   agg.bc <- head(agg.bc[order(agg.bc$Area,decreasing = TRUE), ], 20)
-   #plot
-   pdf(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_Feldblockbewertung","_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".pdf"),sep=""),
-        width=6,height=6)
+    setwd(file.path(W.DIR,OUT.DIR))
+    sink(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_VI","_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".txt"),sep=""))
+    print(rf.Fit)
+    print(varImp(rf.Fit,scale=TRUE))
+    sink()
+    #interaction
+    df.CI.ST[[k]]$I.CI <- interaction(as.factor(round(df.CI.ST[[k]]$CI.US/10,0)), 
+                                 as.factor(round(df.CI.ST[[k]]$CI.UL/10,0)),
+                                 as.factor(round(df.CI.ST[[k]]$CI.MBI1/10,0)),
+                                 as.factor(round(df.CI.ST[[k]]$CI.MBI2/10,0)),
+                                 sep="")
+    head(df.CI.ST[[k]])
+    ##plot proportions and number of interacted classes
+    Count <- as.data.frame(as.matrix(table(df.CI.ST[[k]]$I.CI)))
+    Count$ClusterIA <- rownames(Count)
+    Count[Count==0]<-NA
+    Count <- na.omit(Count)
+    df.CI.ST[[k]]$Count <- 1
+    Area  <-as.data.frame(aggregate(df.CI.ST[[k]]$AreaFB, by=list(df.CI.ST[[k]]$I.CI),FUN=sum, na.rm=TRUE))
+    Count <- as.data.frame(aggregate(df.CI.ST[[k]]$Count, by=list(df.CI.ST[[k]]$I.CI),FUN=sum, na.rm=TRUE))
+    df.CI.agg <- data.frame(ClusterIA=Area$Group.1,Area=Area$x,Count=Count$x)
+    groupColumns = c("ClusterIA")
+    dataColumns = c("Area")
+    agg.bc = ddply(df.CI.agg, groupColumns, function(x) colSums(x[dataColumns]))
+    #select best  
+    agg.bc <- head(agg.bc[order(agg.bc$Area,decreasing = TRUE), ], 20)
+    #plot
+    pdf(paste(substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_Feldblockbewertung","_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".pdf"),sep=""),
+        width=4,height=6)
     print(
       barchart(factor(ClusterIA) ~ Area*100/sum(Area), 
                data=agg.bc,
                origin = 0,
-               xlab=paste('Flächenanteil (Gesamtfläche =',round(sum(agg.bc$Area)/10000,0),"ha)"),
+               xlab=paste('Flächenanteile (Gesamtfläche =',round(sum(agg.bc$Area)/10000,0),"ha)"),
                ylab="Reliefklassen"))
     dev.off()
-    
-    ##export
-    fb <- st_read(file.path(W.DIR,IN.DIR,FB.SHP))
-    fb <- merge(fb,df.CI.ST[[k]],by="FBID")
+        ##export
     setwd(file.path(W.DIR,OUT.DIR))
-    st_write(fb,
+    st_write(df.CI.ST[[k]],
              paste(W.DIR,OUT.DIR,substr(FB.SHP, start=1, stop=(nchar(FB.SHP)-4)),"_Feldblockbewertung_",as.character(unique(df.CI.ST[[k]]$ST)),"_TH",V.TH,c(".shp"),sep=""),
              delete_layer = TRUE)
     
     }
   }
   }
+
+
+
