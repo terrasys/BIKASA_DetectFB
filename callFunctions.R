@@ -37,5 +37,6 @@ fComparIx(W.DIR,
         V.US="RA8",
         V.UL="RA9",
         V.LS="RA10",
-        V.TH=8)
+        V.TH=75,
+        V.OL=80)
 
